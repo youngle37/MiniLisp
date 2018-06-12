@@ -1,6 +1,6 @@
 # MiniLisp
 
-Simple Lisp interpreter in 200 lines of pure Python code.
+Simple Lisp interpreter in 200+ lines of pure Python code.
 
 
 ## Usage
