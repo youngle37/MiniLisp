@@ -60,9 +60,11 @@ class Function:
                     f' but got {type(arg).__name__}')
 
     def __str__(self):
-        a_str = f' [n_args {self.n_args}]' if self.n_args is not None else ''
-        t_str = f' [arg_type {self.arg_type.__name__}]' if self.arg_type is not None else ''
-        return f'<function \'{self.name}\'{a_str}{t_str}>'
+        tstr = getattr(self.arg_type, '__name__', str(self.arg_type))
+        atype = f' (type {tstr})' if self.arg_type is not None else ''
+        nargs = self.n_args.replace('== ', '')
+        numa = f' ({nargs} args)' if self.n_args is not None else ''
+        return f"<function '{self.name}'{numa}{atype}>"
 
 
 def init_scope():
@@ -88,19 +90,19 @@ def init_scope():
         return any(args)
     
     return {
-        '+':        Function('+', _add,                 int, '>= 2'),
-        '-':        Function('-', lambda x, y: x - y,   int, '== 2'),
-        '*':        Function('*', _mul,                 int, '>= 2'),
-        '/':        Function('/', lambda x, y: x // y,  int, '== 2'),
-        'mod':      Function('mod', lambda x, y: x % y, int, '== 2'),
-        '=':        Function('=', _equ,                 'same', '>= 2'),
-        '>':        Function('>', lambda x, y: x > y,   int, '== 2'),
-        '<':        Function('<', lambda x, y: x < y,   int, '== 2'),
-        'and':      Function('and', _and,               bool, '>= 2'),
-        'or':       Function('or', _or,                 bool, '>= 2'),
-        'not':      Function('not', lambda x: not x,    bool, '== 1'),
-        'print-num': Function('print-num',   lambda x: print(x),      int, '== 1'),
-        'print-bool': Function('print-bool', lambda x: print({True: '#t', False: '#f'}[x]), bool, '== 1')
+        '+':            Function('+', _add,                         int, '>= 2'),
+        '-':            Function('-', lambda x, y: x - y,           int, '== 2'),
+        '*':            Function('*', _mul,                         int, '>= 2'),
+        '/':            Function('/', lambda x, y: x // y,          int, '== 2'),
+        'mod':          Function('mod', lambda x, y: x % y,         int, '== 2'),
+        '=':            Function('=', _equ,                         'same', '>= 2'),
+        '>':            Function('>', lambda x, y: x > y,           int, '== 2'),
+        '<':            Function('<', lambda x, y: x < y,           int, '== 2'),
+        'and':          Function('and', _and,                       bool, '>= 2'),
+        'or':           Function('or', _or,                         bool, '>= 2'),
+        'not':          Function('not', lambda x: not x,            bool, '== 1'),
+        'print-num':    Function('print-num',   lambda x: print(x), int, '== 1'),
+        'print-bool':   Function('print-bool', lambda x: print({True: '#t', False: '#f'}[x]), bool, '== 1')
     }
 
 
