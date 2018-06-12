@@ -48,23 +48,29 @@ class Function:
     
     def _check_args(self, args):
         n_args = len(args)
-        assert eval(f'{n_args} {self.n_args}'), f'expect number of arguments {self.n_args}, got {n_args}'
-        for i, arg in enumerate(args):
+        assert eval(f'{n_args} {self.n_args}'), (
+            f'expect number of arguments {self.n_args}, got {n_args}')
+        if self.arg_type is not None:
             if self.arg_type == 'same':
-                assert type(arg) == type(args[0]), (
-                    f'expect argument {i + 1} with type {type(args[0]).__name__}'
-                    f' but got {type(arg).__name__}')
-            elif self.arg_type is not None:
-                assert type(arg) == self.arg_type, (
-                    f'expect argument {i + 1} with type {self.arg_type.__name__}'
-                    f' but got {type(arg).__name__}')
+                arg_type = type(args[0])
+            else:
+                arg_type = self.arg_type
+            for i, arg in enumerate(args):
+                if type(arg) != arg_type:
+                    n = i + 1
+                    t1 = getattr(arg_type, '__name__', arg_type)
+                    t2 = getattr(type(arg), '__name__', type(arg))
+                    assert False, f'expect argument {n} with type {t1} but got {t2}'
 
     def __str__(self):
-        tstr = getattr(self.arg_type, '__name__', str(self.arg_type))
-        atype = f' (type {tstr})' if self.arg_type is not None else ''
-        nargs = self.n_args.replace('== ', '')
-        numa = f' ({nargs} args)' if self.n_args is not None else ''
-        return f"<function '{self.name}'{numa}{atype}>"
+        info = ''
+        if self.n_args is not None:
+            n_args = self.n_args.replace('== ', '')
+            info += ' ({} args)'.format(n_args)
+        if self.arg_type is not None:
+            arg_type = getattr(self.arg_type, '__name__', str(self.arg_type))
+            info += ' (type {})'.format(arg_type)
+        return f"<function '{self.name}'{info}>"
 
 
 def init_scope():
@@ -147,7 +153,12 @@ def evaluate(statement, scope, level=0):
                 return evaluate(false, scope, level + 1)
         
         if isinstance(primary, tuple):
-            assert primary[0] == 'fun', 'argument 0 should be fun'
+            primary = evaluate(primary, scope, level + 1)
+            assert type(primary) == Function, f'expect a function but got {type(primary).__name__}'
+            statement = (primary, *statement[1:])
+            return evaluate(statement, scope, level)
+
+        if isinstance(primary, Function):
             func, *args = statement
             func = evaluate(func, scope, level + 1)
             args = [evaluate(arg, scope, level + 1) for arg in args]
