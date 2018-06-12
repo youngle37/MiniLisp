@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 
+
 debugging = False
+
+# Debugging functions
 
 def debug(*args, indent=0, **kwargs):
     if debugging:
@@ -12,6 +15,7 @@ def success(*args, **kwargs):
 
 def warning(*args, **kwargs):
     print(f'\033[93m{" ".join(map(str, args))}\033[0m', **kwargs)
+
 
 def parse_tree(code):
     tokens = code.replace('(', ' ( ').replace(')', ' ) ').split()
@@ -25,7 +29,9 @@ def parse_tree(code):
             tree_code.append(',')
     return eval(''.join(['(', *tree_code, ')']))
 
+
 def is_id(s):
+    # [a-z][a-z\-]*
     c, *r = s
     if not c.islower():
         return False
@@ -58,8 +64,8 @@ class Function:
             for i, arg in enumerate(args):
                 if type(arg) != arg_type:
                     n = i + 1
-                    t1 = getattr(arg_type, '__name__', arg_type)
-                    t2 = getattr(type(arg), '__name__', type(arg))
+                    t1 = getattr(arg_type, '__name__', arg_type).lower()
+                    t2 = getattr(type(arg), '__name__', type(arg)).lower()
                     assert False, f'expect argument {n} with type {t1} but got {t2}'
 
     def __str__(self):
@@ -71,9 +77,116 @@ class Function:
             arg_type = getattr(self.arg_type, '__name__', str(self.arg_type))
             info += ' (type {})'.format(arg_type)
         return f"<function '{self.name}'{info}>"
+    
+    def __repr__(self):
+        return str(self)
+
+
+def evaluate(statement, scope, level=0):
+    if isinstance(statement, tuple):
+        debug('statement:', str(statement).replace(',', '').replace('\'', ''), indent=level)
+        debug('| variables:', ' '.join(f'{name}={value}' for name, value in scope.items() if not callable(value)), indent=level)
+        debug('| functions:', ' '.join(name for name, value in scope.items() if callable(value)), indent=level)
+
+        assert len(statement), 'missing function'
+        primary = statement[0]
+        
+        if primary == 'define':
+            # Define a variable in scope
+            _, name, value = statement
+            assert is_id(name), f'invalid id: {name}'
+            if type(value) is tuple and value[0] == 'fun':
+                scope[name] = Function(name)
+                func = evaluate(value, scope, level + 1)
+                scope[name].func = func.func
+                scope[name].n_args = func.n_args
+            else:
+                scope[name] = evaluate(value, scope, level + 1)
+            return
+
+        if primary == 'fun':
+            # Return a function instance
+            _, arg_names, *defines, exp = statement
+            n_args = len(arg_names)
+            static_scope = scope.copy() # copy scope for static variables
+            for define in defines:
+                # Define static local variables in copied scope
+                evaluate(define, static_scope, level + 1)
+            def _func(*args):
+                # Copy static scope to add args in it
+                func_scope = static_scope.copy() # pylint: disable=E0601
+                for arg_name, arg in zip(arg_names, args):
+                    func_scope[arg_name] = evaluate(arg, scope, level + 1)
+                return evaluate(exp, func_scope, level + 1)
+            return Function(func=_func, n_args=f'== {n_args}')
+
+        if primary == 'if':
+            _, cond, true, false = statement
+            if evaluate(cond, scope, level + 1):
+                return evaluate(true, scope, level + 1)
+            else:
+                return evaluate(false, scope, level + 1)
+        
+        # (...) <- this should be a function call
+
+        if isinstance(primary, tuple):
+            # Eval the primary to see if it's a function
+            primary = evaluate(primary, scope, level + 1)
+            assert type(primary) == Function, (
+                f'expect a function but got {type(primary).__name__}')
+            statement = (primary, *statement[1:])
+            return evaluate(statement, scope, level)
+
+        # (function or function_name ...) 
+
+        func = None
+
+        if isinstance(primary, Function):
+            func, *args = statement
+        
+        elif type(primary) is str and primary in scope:
+            func_name, *args = statement
+            func = scope[func_name]
+        
+        if func is not None:
+            args = [evaluate(arg, scope, level + 1) for arg in args]
+            debug('| call:', func.name, args, indent=level)
+            value = func(*args)
+            debug('| return:', value, indent=level)
+            return value
+        
+
+        assert not is_id(primary), f'undefined function: {primary}'
+        assert False, f'invalid function name: {primary}'
+
+    else:
+        # Evaluate an argument
+
+        if callable(statement):
+            return statement
+
+        try:
+            return int(statement)
+        except:
+            pass
+        
+        try:
+            return {'#t': True, '#f': False}[statement]
+        except:
+            pass
+            
+        try:
+            return scope[statement]
+        except:
+            pass
+        
+        assert not is_id(statement), f'undefined variable: {statement}'
+        assert False, f'invalid syntax: {statement}'
 
 
 def init_scope():
+    # Initialize a clean variable scope with pre-defined variables
+
     def _add(*args):
         return sum(args)
 
@@ -112,96 +225,6 @@ def init_scope():
     }
 
 
-def evaluate(statement, scope, level=0):
-    if isinstance(statement, tuple):
-        debug('statement:', str(statement).replace(',', '').replace('\'', ''), indent=level)
-        debug('| variables:', ' '.join(f'{name}={value}' for name, value in scope.items() if not callable(value)), indent=level)
-        debug('| functions:', ' '.join(name for name, value in scope.items() if callable(value)), indent=level)
-
-        assert len(statement), 'missing function'
-        primary = statement[0]
-
-        if primary == 'define':
-            _, name, value = statement
-            assert is_id(name), f'invalid id: {name}'
-            if type(value) is tuple and value[0] == 'fun':
-                scope[name] = Function(name)
-                func = evaluate(value, scope, level + 1)
-                scope[name].func = func.func
-                scope[name].n_args = func.n_args
-            else:
-                scope[name] = evaluate(value, scope, level + 1)
-            return
-
-        if primary == 'fun':
-            _, arg_names, *defines, exp = statement
-            scope = scope.copy()
-            n_args = len(arg_names)
-            for define in defines:
-                evaluate(define, scope, level + 1)
-            def _func(*args):
-                for arg_name, arg in zip(arg_names, args):
-                    scope[arg_name] = evaluate(arg, scope, level + 1)
-                return evaluate(exp, scope.copy(), level + 1)
-            return Function(func=_func, n_args=f'== {n_args}')
-
-        if primary == 'if':
-            _, cond, true, false = statement
-            if evaluate(cond, scope, level + 1):
-                return evaluate(true, scope, level + 1)
-            else:
-                return evaluate(false, scope, level + 1)
-        
-        if isinstance(primary, tuple):
-            primary = evaluate(primary, scope, level + 1)
-            assert type(primary) == Function, f'expect a function but got {type(primary).__name__}'
-            statement = (primary, *statement[1:])
-            return evaluate(statement, scope, level)
-
-        if isinstance(primary, Function):
-            func, *args = statement
-            func = evaluate(func, scope, level + 1)
-            args = [evaluate(arg, scope, level + 1) for arg in args]
-            return func(*args)
-        
-        if primary in scope:
-            func, *args = statement
-            args = [evaluate(arg, scope, level + 1) for arg in args]
-            debug('| call:', primary, args, indent=level)
-            value = scope[func](*args)
-            debug('| return:',  value, indent=level)
-            return value
-        
-        if is_id(primary):
-            assert False, f'undefined function: {primary}'
-        
-        assert False, f'invalid function: {primary}'
-
-    else:
-        if callable(statement):
-            return statement
-
-        try:
-            return int(statement)
-        except:
-            pass
-        
-        try:
-            return {'#t': True, '#f': False}[statement]
-        except:
-            pass
-            
-        try:
-            return scope[statement]
-        except:
-            pass
-        
-        if is_id(statement):
-            assert False, f'undefined variable: {statement}'
-        
-        assert False, f'invalid syntax: {statement}'
-
-
 def run(code, scope=init_scope(), interactive=False):
     try:
         statements = parse_tree(code)
@@ -224,7 +247,6 @@ def run(code, scope=init_scope(), interactive=False):
                 warning('Error:', str(e) or 'invalid syntax')
             else:
                 print('Error:', str(e) or 'invalid syntax')
-
 
 
 if __name__ == '__main__':
