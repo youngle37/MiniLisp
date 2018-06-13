@@ -47,6 +47,7 @@ class Function:
         self.func = func
         self.arg_type = arg_type
         self.n_args = n_args
+        self.locked = False
 
     def __call__(self, *args):
         self._check_args(args)
@@ -95,13 +96,18 @@ def evaluate(statement, scope, level=0):
             # Define a variable in scope
             _, name, value = statement
             assert is_id(name), f'invalid id: {name}'
-            if type(value) is tuple and value[0] == 'fun':
-                scope[name] = Function(name)
-                func = evaluate(value, scope, level + 1)
-                scope[name].func = func.func
-                scope[name].n_args = func.n_args
-            else:
-                scope[name] = evaluate(value, scope, level + 1)
+            if type(value) is tuple:
+                temp_scope = scope.copy()
+                temp_scope[name] = Function(name)
+                temp_scope[name].locked = True
+                temp = evaluate(value, temp_scope, level + 1)
+                if callable(temp) and temp != temp_scope[name]:
+                    temp_scope[name].locked = False
+                    temp_scope[name].func = temp.func
+                    temp_scope[name].n_args = temp.n_args
+                    scope[name] = temp_scope[name]
+                    return
+            scope[name] = evaluate(value, scope, level + 1)
             return
 
         if primary == 'fun':
@@ -149,8 +155,10 @@ def evaluate(statement, scope, level=0):
             func = scope[func_name]
         
         if func is not None:
+            assert callable(func), f'{func} is not callable'
             args = [evaluate(arg, scope, level + 1) for arg in args]
             debug('| call:', func.name, args, indent=level)
+            assert not func.locked, f'calling an incomplete function: {func.name}'
             value = func(*args)
             debug('| return:', value, indent=level)
             return value
